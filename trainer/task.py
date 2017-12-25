@@ -10,10 +10,15 @@ from sklearn.model_selection import train_test_split
 
 from tensorflow.python.lib.io import file_io
 
+
+# Model for the Classifier
 class model():
     def __init__(self):
+        # Mean and Standard Deviation for Intializing the Weights
         mean = 0
         std = 0.1
+
+        # Weight Tensors for the Layers
         self.weights = {'wc1': tf.Variable(tf.truncated_normal((5, 5, 1, 32), mean=mean, stddev=std, dtype=tf.float32),
                                       name='ConvolutionalWeight1'),
                    'wc2': tf.Variable(tf.truncated_normal((5, 5, 32, 64), mean=mean, stddev=std, dtype=tf.float32),
@@ -24,20 +29,23 @@ class model():
                                        name='FullyConnectedLayerWeight2'),
                    }
 
+        # Bias Tensors for the Layers
         self.biases = {'bc1': tf.zeros(32, name='ConvolutionalBias1'),
                   'bc2': tf.zeros(64, name='ConvolutionalBias2'),
                   'bfc1': tf.zeros(1024, name='FullyConnectedLayerBias1'),
                   'bfc2': tf.zeros(10, name='FullyConnectedLayerBias2'),
                   }
 
+        # Tensors for Input and Output
         self.X = tf.placeholder(tf.float32, (None, 28, 28, 1), name='input')
         self.Y = tf.placeholder(tf.int32, (None), name='label')
         self.onehot_Y = tf.one_hot(self.Y, 10)
 
-
+        # Function for Constructing Convolution Layer
         def conv2d(x, W):
             return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
 
+        # Function for Constructing MaxPool Layer
         def max_pool_2(x):
             return tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
 
@@ -60,13 +68,6 @@ class model():
         # Layer 5: Fully Connected
         self.output = tf.matmul(self.dropout, self.weights['wfc2']) + self.biases['bfc2']
 
-        # For Training
-        self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.onehot_Y, logits=self.output))
-
-        # Using ADAM optimizer to train the network
-        self.train_step = tf.train.AdamOptimizer(1e-4).minimize(self.cross_entropy)
-        self.correct_prediction = tf.equal(tf.argmax(self.output, 1), tf.argmax(self.onehot_Y, 1))
-
     # Function to convert one hot output to label
     def onehot2Label(self, soft_output):
         label = []
@@ -81,9 +82,9 @@ class model():
             tf.nn.softmax_cross_entropy_with_logits(labels=self.onehot_Y, logits=self.output))
 
         # Using ADAM optimizer to train the network
-        train_step = tf.train.AdamOptimizer(1e-4).minimize(self.cross_entropy)
+        train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
         correct_prediction = tf.equal(tf.argmax(self.output, 1), tf.argmax(self.onehot_Y, 1))
-        accuracy = tf.reduce_mean(tf.cast(self.correct_prediction, tf.float32))
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
@@ -92,16 +93,19 @@ class model():
             logging.info("Training Begins")
             sess.run(tf.global_variables_initializer())
 
+            # Variable to store accuracy at every 200th epoch
             accuracy_log = []
+
             for i in range(epochs):
                 num_examples = len(X_test)
 
-
+                # Creating Batches for Training
                 for offset in range(0, batch_size):
                     end = offset + batch_size
                     batch_x, batch_y = X_train[offset:end], y_train[offset:end]
                     sess.run(train_step, feed_dict={self.X: batch_x, self.Y: batch_y, self.keep_prob: 0.5})
 
+                # Calculating Accuracy for every 200th epoch
                 if (i + 1) % 200 == 0:
 
                     total_accuracy = 0
@@ -115,6 +119,7 @@ class model():
                     accuracy_log.append([validation_accuracy])
                     logging.info("Epoch " + str(i + 1) + " Validation Accuracy: " + str(validation_accuracy))
 
+            # Saving Accuracy
             with file_io.FileIO(job_dir + "/accuracy.csv", 'w') as f:
                 writer = csv.writer(f)
                 writer.writerows(accuracy_log)
@@ -148,8 +153,7 @@ class model():
 
         return np.reshape(all_labels, (len(features)))
 
-
-
+# Function to convert data into features
 def getFeatures(data):
     features = []
     for row in data:
@@ -160,10 +164,9 @@ def getFeatures(data):
         tmp_img = np.reshape(tmp_img, (28, 28, 1))
         features.append(tmp_img)
 
-    # Printing Features Matrix Shape
     return np.array(features)
 
-
+# Main Function
 def main(_):
     logging.info("Program Started")
     parser = argparse.ArgumentParser()
@@ -179,33 +182,43 @@ def main(_):
 
     arguments = args.__dict__
 
+    # Job-dir provides location to Google Cloud ML for storing the job i.e. the training program
     job_dir = arguments['job_dir']
+
+    # Data-dir provides the directory where input data is stored
     data_dir = arguments['data_dir']
 
     with file_io.FileIO(data_dir + "/train.csv", 'r') as f:
         data = pd.read_csv(f)
 
     logging.info("Training Data Read")
+
+    # Fetching labels and features from the data
     labels = data['label'].values
     features = getFeatures(data.drop(['label'], axis=1).values)
 
     X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.33)
 
+    # Initializing Model
     digit_model = model()
 
+    # Fitting Data
     digit_model.fit(X_train, X_test, y_train, y_test, job_dir=job_dir)
 
+    # Reading Challenge Test Data
     with file_io.FileIO(data_dir + "/test.csv", 'r') as f:
         test_data = pd.read_csv(f)
 
     # Dividing Pandas Data Into Labels and Features
     test_features = getFeatures(test_data.values)
 
+    # Predicting Labels for test data
     test_labels = digit_model.predict(test_features, job_dir)
 
     img_id = np.arange(1, len(test_features) + 1)
     data = np.transpose(np.vstack((img_id, test_labels)))
 
+    # Storing Predicted labels
     with file_io.FileIO(job_dir + "/result-digit.csv", 'w') as f:
         writer = csv.writer(f)
 

@@ -100,7 +100,7 @@ class model():
                 num_examples = len(X_test)
 
                 # Creating Batches for Training
-                for offset in range(0, batch_size):
+                for offset in range(0, num_examples, batch_size):
                     end = offset + batch_size
                     batch_x, batch_y = X_train[offset:end], y_train[offset:end]
                     sess.run(train_step, feed_dict={self.X: batch_x, self.Y: batch_y, self.keep_prob: 0.5})
